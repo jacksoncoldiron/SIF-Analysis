@@ -1,6 +1,6 @@
 # SIF Analysis - Iowa Agricultural Areas
 
-This repository contains analysis of Solar-Induced Fluorescence (SIF) data for Iowa agricultural areas, focusing on seasonal patterns and drought impacts.
+This repository contains analysis of Solar-Induced Chlorophyll Fluorescence (SIF) data for Iowa agricultural areas, focusing on seasonal patterns and drought impacts.
 
 ## Project Structure
 
