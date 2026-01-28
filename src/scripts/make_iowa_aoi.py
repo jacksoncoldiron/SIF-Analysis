@@ -45,7 +45,7 @@ def main():
     # Dissolve all counties into a single Iowa geometry
     # (dissolve by constant -> one row)
     gdf["_dissolve"] = 1
-    iowa = gdf.dissolve(by="_dissolve").drop(columns=["_dissolve"])
+    iowa = gdf.dissolve(by="_dissolve").reset_index(drop=True)
 
     # Write GeoJSON
     iowa.to_file(outfile, driver="GeoJSON")
