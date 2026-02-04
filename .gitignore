@@ -53,7 +53,7 @@ ehthumbs.db
 Thumbs.db
 
 # Data files (too large for GitHub - add as needed)
-# data/raw/
+data/raw/
 # data/processed/
 
 # Large raster/image files
