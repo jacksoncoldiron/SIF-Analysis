@@ -210,9 +210,11 @@ def run_single_month(args):
     year, month = args.year, args.month
     start_date, end_date = month_dates_mmddyyyy(year, month)
 
-    # Setup output directory with partitioning
-    outdir = Path(args.outdir) / f"year={year}" / f"month={month:02d}"
-    manifest_path = outdir / "manifest.json"
+    # Setup output directory (flat structure - all TIFs together)
+    outdir = Path(args.outdir)
+    manifest_dir = outdir / "manifests"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = manifest_dir / f"manifest_{year}_{month:02d}.json"
     outdir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
@@ -314,11 +316,13 @@ def run_batch(args):
 
     tasks = {}  # (year, month) -> {"task_id": ..., "outdir": ..., "manifest_path": ...}
 
+    outdir = Path(args.outdir)
+    manifest_dir = outdir / "manifests"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+
     for year, month in months:
         start_date, end_date = month_dates_mmddyyyy(year, month)
-        outdir = Path(args.outdir) / f"year={year}" / f"month={month:02d}"
-        manifest_path = outdir / "manifest.json"
-        outdir.mkdir(parents=True, exist_ok=True)
+        manifest_path = manifest_dir / f"manifest_{year}_{month:02d}.json"
 
         task_name = f"ECOSTRESS_ETdaily_{year}_{month:02d}"
 
@@ -343,7 +347,6 @@ def run_batch(args):
 
         tasks[(year, month)] = {
             "task_id": task_id,
-            "outdir": outdir,
         }
 
     print(f"\n{len(tasks)} tasks submitted/resumed")
@@ -399,7 +402,7 @@ def run_batch(args):
             continue
 
         print(f"\n  {year}-{month:02d}: Downloading...")
-        download_bundle(headers, info["task_id"], info["outdir"])
+        download_bundle(headers, info["task_id"], outdir)
 
     # Summary
     successful = len(tasks) - len(failed)
