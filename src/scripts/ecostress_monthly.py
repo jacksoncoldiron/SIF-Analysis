@@ -4,7 +4,7 @@ ECOSTRESS Data Download for Iowa (2019-2023)
 Runs as batch job on GRIT HPC
 
 Downloads ECOSTRESS L3 JET evapotranspiration data to:
-/work/jcoldiron/data/raw/ECOSTRESS_JET/
+/home/jcoldiron/iowa-corn-project/data/raw/ECOSTRESS_JET/
 
 Logs progress to stdout for SLURM capture.
 """
@@ -51,8 +51,8 @@ temporal_range = (f"{START_YEAR}-01-01", f"{END_YEAR}-12-31")
 # Iowa bounding box (west, south, east, north)
 iowa_bbox = (-96.64, 40.38, -90.14, 43.50)
 
-# Output path on GRIT work directory
-output_path = Path("/work/jcoldiron/data/raw/ECOSTRESS_JET")
+# Output path - CORRECTED to use home directory
+output_path = Path("/home/jcoldiron/iowa-corn-project/data/raw/ECOSTRESS_JET")
 output_path.mkdir(parents=True, exist_ok=True)
 
 # Log file
