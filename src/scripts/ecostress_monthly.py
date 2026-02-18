@@ -112,41 +112,60 @@ except Exception as e:
     sys.exit(1)
 
 # =============================================================================
-# Download data
+# Filter to only ETdaily and cloud mask files
+# =============================================================================
+
+# Layers we want to keep - filter by filename suffix
+KEEP_LAYERS = ('ETdaily.tif', 'cloud.tif')
+
+log("Filtering granule URLs to ETdaily and cloud mask layers only...")
+
+filtered_urls = []
+for granule in results:
+    for url in granule.data_links():
+        if any(url.endswith(layer) for layer in KEEP_LAYERS):
+            filtered_urls.append(url)
+
+log(f"  Total granule files available: ~{len(results) * 12} (estimated)")
+log(f"  Filtered to {len(filtered_urls)} files ({', '.join(KEEP_LAYERS)})")
+
+if not filtered_urls:
+    log("WARNING: No matching URLs found after filtering. Check KEEP_LAYERS.")
+    sys.exit(1)
+
+# =============================================================================
+# Download filtered files
 # =============================================================================
 
 log(f"\nStarting download to: {output_path}")
-log(f"This may take several hours for {len(results)} granules...")
+log(f"This may take several hours for {len(filtered_urls)} files...")
 
 try:
     downloaded_files = earthaccess.download(
-        results, 
+        filtered_urls,
         local_path=str(output_path)
     )
-    
+
     log(f"\n{'='*60}")
     log(f"DOWNLOAD COMPLETE")
     log(f"{'='*60}")
     log(f"Total files downloaded: {len(downloaded_files)}")
     log(f"Location: {output_path}")
-    
-    # Categorize files
+
     etdaily_files = [f for f in downloaded_files if 'ETdaily.tif' in str(f)]
     cloud_files = [f for f in downloaded_files if 'cloud.tif' in str(f)]
-    other_files = len(downloaded_files) - len(etdaily_files) - len(cloud_files)
-    
+
     log(f"\nFile breakdown:")
     log(f"  ETdaily.tif files: {len(etdaily_files)}")
-    log(f"  cloud.tif files: {len(cloud_files)}")
-    log(f"  Other files: {other_files}")
-    
+    log(f"  cloud.tif files:   {len(cloud_files)}")
+
     # Save file list
     filelist_path = output_path / "downloaded_files.txt"
     with open(filelist_path, 'w') as f:
         for file in sorted(downloaded_files):
             f.write(str(file) + '\n')
     log(f"\nFile list saved to: {filelist_path}")
-    
+
 except Exception as e:
     log(f"ERROR during download: {e}")
     sys.exit(1)
