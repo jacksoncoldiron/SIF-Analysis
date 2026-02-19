@@ -4,7 +4,7 @@ ECOSTRESS Data Download for Iowa (2019-2023)
 Runs as batch job on GRIT HPC
 
 Downloads ECOSTRESS L3 JET evapotranspiration data to:
-SIF-Analysis/data/raw/ECOSTRESS_JET/
+SIF-Analysis/data/raw/ECOSTRESS/
 
 Logs progress to stdout for SLURM capture.
 """
@@ -53,7 +53,7 @@ iowa_bbox = (-96.64, 40.38, -90.14, 43.50)
 
 # Output path - relative to this script's location (SIF-Analysis/data/raw/ECOSTRESS_JET)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-output_path = PROJECT_ROOT / "data" / "raw" / "ECOSTRESS_JET"
+output_path = PROJECT_ROOT / "data" / "raw" / "ECOSTRESS"
 output_path.mkdir(parents=True, exist_ok=True)
 
 # Log file
