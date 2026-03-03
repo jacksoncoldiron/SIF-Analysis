@@ -64,7 +64,7 @@ TARGET_TRANSFORM = [0.05, 0, -180.0, 0, -0.05, 90.0]
 
 # ── GEE Cloud project ─────────────────────────────────────────────────────
 # Replace with your actual GEE Cloud project ID
-GEE_PROJECT = 'your-project-id'
+GEE_PROJECT = 'et-research-489120'
 
 # ── Output directory ──────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
