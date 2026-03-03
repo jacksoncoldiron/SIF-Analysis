@@ -52,7 +52,7 @@ temporal_range = (f"{START_YEAR}-01-01", f"{END_YEAR}-12-31")
 iowa_bbox = (-96.64, 40.38, -90.14, 43.50)
 
 # Output path - relative to this script's location (SIF-Analysis/data/raw/ECOSTRESS_JET)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 output_path = PROJECT_ROOT / "data" / "raw" / "ECOSTRESS"
 output_path.mkdir(parents=True, exist_ok=True)
 

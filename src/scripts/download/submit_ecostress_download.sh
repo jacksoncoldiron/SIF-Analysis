@@ -10,7 +10,7 @@
 
 mkdir -p /home/jcoldiron/iowa-corn-project/logs
 
-cd /home/jcoldiron/iowa-corn-project/code/SIF-Analysis/src/scripts
+cd /home/jcoldiron/iowa-corn-project/code/SIF-Analysis/src/scripts/download
 
 export PYTHONPATH="$HOME/.local/lib/python3.12/site-packages:${PYTHONPATH:-}"
 
