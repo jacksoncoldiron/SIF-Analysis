@@ -49,12 +49,11 @@ YEARS = list(range(2019, 2024))  # 2019–2023
 OPENET_MONTHLY = 'OpenET/ENSEMBLE/CONUS/GRIDMET/MONTHLY/v2_0'
 ET_BAND        = 'et_ensemble_mad'  # mm/month
 
-# ── Target grid: SIF OCO-2 0.05° ─────────────────────────────────────────
-# All outputs aligned to the global SIF grid so pixels snap exactly to
-# SIF, ECOSTRESS (clipped/), and NLDAS outputs.
+# ── Target grid: NLDAS 0.125° ─────────────────────────────────────────────
+# Aligned to the NLDAS Noah grid (464 x 224, 125°W–67°W, 25°N–53°N).
 # crsTransform format: [xScale, xShear, xOrigin, yShear, yScale, yOrigin]
 TARGET_CRS       = 'EPSG:4326'
-TARGET_TRANSFORM = [0.05, 0, -180.0, 0, -0.05, 90.0]
+TARGET_TRANSFORM = [0.125, 0, -125.0, 0, -0.125, 53.0]
 
 # ── GEE Cloud project ─────────────────────────────────────────────────────
 GEE_PROJECT = 'et-research-489120'
