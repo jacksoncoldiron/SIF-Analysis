@@ -1,0 +1,24 @@
+# Core scientific stack
+numpy
+pandas
+scipy
+matplotlib
+seaborn
+
+# Geospatial
+xarray
+rioxarray
+rasterio
+geopandas
+pyproj
+shapely
+pyogrio
+
+# NetCDF / HDF support (required by xarray for .nc files)
+netCDF4
+h5netcdf
+
+# Jupyter
+ipykernel
+jupyter_client
+jupyter_core

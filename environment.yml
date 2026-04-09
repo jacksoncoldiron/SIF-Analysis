@@ -1,0 +1,30 @@
+name: sif
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  # Core scientific stack
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - seaborn
+  # Geospatial
+  - xarray
+  - rioxarray
+  - rasterio
+  - geopandas
+  - pyproj
+  - shapely
+  - fiona
+  - pyogrio
+  # NetCDF / HDF
+  - netcdf4
+  - h5netcdf
+  # Jupyter
+  - jupyter
+  - ipykernel
+  - pip:
+    - rioxarray
