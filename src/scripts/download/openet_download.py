@@ -4,7 +4,7 @@ OpenET Monthly ET Download for Iowa (2019-2023)
 Runs as batch job on GRIT HPC
 
 Downloads OpenET ENSEMBLE monthly ET from Google Earth Engine and saves
-GeoTIFFs directly to disk aligned to the SIF OCO-2 0.05° grid.
+GeoTIFFs directly to disk aligned to the NLDAS 0.125° Iowa reference grid.
 
 Output: SIF-Analysis/data/raw/OpenET/OpenET_Iowa_YYYYMM.tif
 """
@@ -12,7 +12,6 @@ Output: SIF-Analysis/data/raw/OpenET/OpenET_Iowa_YYYYMM.tif
 import sys
 import subprocess
 import io
-import zipfile
 import datetime
 import time
 from pathlib import Path
@@ -26,17 +25,15 @@ if target_dir not in sys.path:
 
 try:
     import ee
-    import requests
     print(f"earthengine-api version: {ee.__version__}", flush=True)
 except ImportError:
-    print("Installing earthengine-api and requests...", flush=True)
+    print("Installing earthengine-api...", flush=True)
     subprocess.check_call([
         sys.executable, '-m', 'pip', 'install',
         '--target=' + target_dir,
-        'earthengine-api', 'requests'
+        'earthengine-api'
     ])
     import ee
-    import requests
 
 # =============================================================================
 # Configuration
@@ -46,21 +43,20 @@ except ImportError:
 YEARS = list(range(2019, 2024))  # 2019–2023
 
 # ── GEE collection ────────────────────────────────────────────────────────
-OPENET_MONTHLY = 'OpenET/ENSEMBLE/CONUS/GRIDMET/MONTHLY/v2_0'
+OPENET_MONTHLY = 'projects/openet/assets/ensemble/conus/gridmet/monthly/v2_0'
 ET_BAND        = 'et_ensemble_mad'  # mm/month
 
-# ── Target grid: NLDAS 0.125° ─────────────────────────────────────────────
-# Aligned to the NLDAS Noah grid (464 x 224, 125°W–67°W, 25°N–53°N).
-# crsTransform format: [xScale, xShear, xOrigin, yShear, yScale, yOrigin]
-TARGET_CRS       = 'EPSG:4326'
-TARGET_TRANSFORM = [0.125, 0, -125.0, 0, -0.125, 53.0]
+# ── Reference grid asset (NLDAS 0.125° Iowa) ─────────────────────────────
+# Uploaded GeoTIFF defines the target CRS, pixel size, and alignment.
+# Resolution and transform are read dynamically at runtime via .projection().
+REF_ASSET_ID = 'projects/et-research-489120/assets/NLDAS_Iowa_reference_grid'
 
 # ── GEE Cloud project ─────────────────────────────────────────────────────
 GEE_PROJECT = 'et-research-489120'
 
 # ── Output directory ──────────────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-OUTPUT_DIR   = PROJECT_ROOT / 'data' / 'raw' / 'OpenET'
+# Hardcoded to GRIT HPC path — this script is intended to run as a batch job there.
+OUTPUT_DIR = Path('/home/pielab-sandbox-jcoldiron/SIF-Analysis/data/raw/OpenET')
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Log file ──────────────────────────────────────────────────────────────
@@ -89,8 +85,20 @@ except Exception as e:
     sys.exit(1)
 
 # =============================================================================
-# Study area: Iowa
+# Reference grid: read CRS, transform, and region from uploaded asset
 # =============================================================================
+log("Reading reference grid projection from GEE asset...")
+ref_image     = ee.Image(REF_ASSET_ID)
+ref_band_info = ref_image.getInfo()['bands'][0]
+TARGET_CRS       = ref_band_info['crs']
+TARGET_TRANSFORM = ref_band_info['crs_transform']  # [xScale, xShear, xOrig, yShear, yScale, yOrig]
+REF_WIDTH        = ref_band_info['dimensions'][0]   # 53
+REF_HEIGHT       = ref_band_info['dimensions'][1]   # 25
+log(f"  CRS:       {TARGET_CRS}")
+log(f"  Transform: {TARGET_TRANSFORM}")
+log(f"  Dimensions: {REF_WIDTH} x {REF_HEIGHT}")
+
+# Iowa geometry used only for collection filtering
 iowa = (ee.FeatureCollection('TIGER/2018/States')
           .filter(ee.Filter.eq('NAME', 'Iowa'))
           .geometry())
@@ -140,29 +148,65 @@ for i, period in enumerate(periods):
         continue
 
     try:
+        # .mean() aggregates all tiles covering Iowa for this month.
+        # No .clip() here — the explicit grid dimensions cover the full Iowa
+        # bounding box; exact Iowa boundary clipping happens in post-processing.
         image = (collection
                  .filterDate(period['start'], period['end_excl'])
                  .filterBounds(iowa)
                  .select(ET_BAND)
-                 .first()
-                 .clip(iowa))
+                 .mean())
 
-        # Get download URL from GEE — aligned to SIF OCO-2 0.05° grid
-        url = image.getDownloadURL({
-            'region'      : iowa,
-            'crs'         : TARGET_CRS,
-            'crsTransform': TARGET_TRANSFORM,
-            'fileFormat'  : 'GeoTIFF',
+        # computePixels() is the reliable way to download at an exact affine
+        # grid when the native collection CRS differs from the target CRS.
+        # getDownloadURL + crsTransform silently falls back to native scale
+        # when reprojecting from UTM (EPSG:32610) to WGS84.
+        raw_bytes = ee.data.computePixels({
+            'expression': image,
+            'fileFormat': 'GEO_TIFF',
+            'grid': {
+                'crsCode': TARGET_CRS,
+                'affineTransform': {
+                    'scaleX'    : TARGET_TRANSFORM[0],
+                    'shearX'    : TARGET_TRANSFORM[1],
+                    'translateX': TARGET_TRANSFORM[2],
+                    'shearY'    : TARGET_TRANSFORM[3],
+                    'scaleY'    : TARGET_TRANSFORM[4],
+                    'translateY': TARGET_TRANSFORM[5],
+                },
+                'dimensions': {
+                    'width' : REF_WIDTH,
+                    'height': REF_HEIGHT,
+                },
+            },
         })
 
-        response = requests.get(url, timeout=300)
-        response.raise_for_status()
+        # ── Spatial coverage validation ────────────────────────────────────
+        # Check that at least 80% of columns have non-constant values.
+        # If a tile-only export sneaks through, col_std collapses to 0 for
+        # the edge-filled region — catch it before saving.
+        import io as _io
+        try:
+            import numpy as _np
+            import rasterio as _rio
+            with _rio.open(_io.BytesIO(raw_bytes)) as _src:
+                _data = _src.read(1).astype(float)
+                _data[_data == _src.nodata] = _np.nan if _src.nodata is not None else _data[_data == _src.nodata]
+            _col_std  = _np.nanstd(_data, axis=0)
+            _n_cols   = _col_std.size
+            _n_vary   = int((_col_std > 0.01).sum())
+            _pct_vary = _n_vary / _n_cols if _n_cols else 0
+            if _pct_vary < 0.8:
+                raise ValueError(
+                    f"Spatial coverage check FAILED: only {_n_vary}/{_n_cols} "
+                    f"columns ({_pct_vary:.0%}) have spatially-varying values — "
+                    f"tile-only export suspected. Skipping save."
+                )
+        except ImportError:
+            pass  # rasterio not available; skip validation
 
-        # GEE returns a zip containing the GeoTIFF — extract it
-        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
-            tif_names = [n for n in zf.namelist() if n.endswith('.tif')]
-            with open(out_path, 'wb') as f:
-                f.write(zf.read(tif_names[0]))
+        with open(out_path, 'wb') as f:
+            f.write(raw_bytes)
 
         log(f"[{i+1:3d}/{len(periods)}] Saved: {out_path.name}")
 
