@@ -1,30 +1,49 @@
 #!/usr/bin/env python3
 """
-OpenET Monthly ET Download for Iowa (2015-2024)
+MODIS Monthly NDVI Download for Iowa (2015-2024)
 Runs as batch job on GRIT HPC
 
-Downloads OpenET ENSEMBLE monthly ET from Google Earth Engine and saves
+Downloads MODIS Terra MOD13A3 monthly NDVI from Google Earth Engine and saves
 GeoTIFFs directly to disk aligned to the NLDAS 0.125° Iowa reference grid.
 
-Study period extended from 2019-2023 to 2015-2024 to support a 10-year analysis
-aligned with SIF (OCO-2 from 2014-09), Drought Monitor (from 2015-01), and CDL data.
+NDVI is used alongside SIF to:
+  - Identify fallow fields (low or near-zero NDVI in growing season)
+  - Distinguish active vs dormant crop states
+  - Provide a complementary greenness index to SIF for the drought/irrigation analysis
 
-NOTE: OpenET v2.0 ensemble coverage starts January 2016. Months in 2015 may
-be missing or incomplete; the download loop handles these gracefully by logging
-failures without crashing. Check the log file after the run.
+PRODUCT:
+--------
+MOD13A3.061 — MODIS Terra Vegetation Indices (1km, Monthly)
+GEE Asset: MODIS/061/MOD13A3
+Band: 'NDVI' (stored as integer * 10000; divide by 10000 for true NDVI)
+Native resolution: 1 km
+Temporal coverage: 2000-02 → present
 
-Output: SIF-Analysis/data/raw/OpenET/OpenET_Iowa_YYYYMM.tif
+ALIGNMENT:
+----------
+Output GeoTIFFs are reprojected to the NLDAS 0.125° Iowa reference grid using
+the same reference asset used for OpenET downloads. This ensures pixel-perfect
+alignment with NLDAS, OpenET, SIF, and drought data in the analysis notebooks.
+
+NDVI INTERPRETATION:
+--------------------
+  NDVI < 0.1   : Bare soil / water / non-vegetated
+  0.1–0.3      : Sparse vegetation (possible fallow / early emergence)
+  0.3–0.5      : Moderate vegetation density
+  0.5–0.8      : Dense, actively growing crops (peak growing season)
+  > 0.8        : Very dense canopy (rare for row crops, more common in forest)
+
+Output: SIF-Analysis/data/raw/NDVI/NDVI_Iowa_YYYYMM.tif
 """
 
 import sys
 import subprocess
-import io
 import datetime
 import time
 from pathlib import Path
 
 # =============================================================================
-# Setup: ensure earthengine-api and requests are importable
+# Setup: ensure earthengine-api is importable
 # =============================================================================
 target_dir = str(Path.home() / '.local/lib/python3.12/site-packages')
 if target_dir not in sys.path:
@@ -46,30 +65,26 @@ except ImportError:
 # Configuration
 # =============================================================================
 
-# ── Years to process ──────────────────────────────────────────────────────
-# Extended to 10-year study period (2015-2024) to match SIF and Drought Monitor
-# availability. The script skips months that already exist on disk, so it is
-# safe to re-run to fill in any gaps from prior partial downloads.
-YEARS = list(range(2015, 2025))  # 2015–2024 (10-year study period)
+# ── Study period ─────────────────────────────────────────────────────────────
+YEARS = list(range(2015, 2025))   # 2015–2024 (10-year study period)
 
-# ── GEE collection ────────────────────────────────────────────────────────
-OPENET_MONTHLY = 'projects/openet/assets/ensemble/conus/gridmet/monthly/v2_0'
-ET_BAND        = 'et_ensemble_mad'  # mm/month
+# ── MODIS MOD13A3 collection ─────────────────────────────────────────────────
+MODIS_MONTHLY = 'MODIS/061/MOD13A3'
+NDVI_BAND     = 'NDVI'                 # integer * 10000; divide to get true NDVI
+NDVI_SCALE    = 0.0001                 # scale factor to convert to true NDVI (0–1)
 
-# ── Reference grid asset (NLDAS 0.125° Iowa) ─────────────────────────────
-# Uploaded GeoTIFF defines the target CRS, pixel size, and alignment.
-# Resolution and transform are read dynamically at runtime via .projection().
+# ── Reference grid asset (NLDAS 0.125° Iowa) ─────────────────────────────────
+# Same asset used for OpenET. Defines target CRS, pixel size, and alignment.
 REF_ASSET_ID = 'projects/et-research-489120/assets/NLDAS_Iowa_reference_grid'
 
-# ── GEE Cloud project ─────────────────────────────────────────────────────
+# ── GEE Cloud project ─────────────────────────────────────────────────────────
 GEE_PROJECT = 'et-research-489120'
 
-# ── Output directory ──────────────────────────────────────────────────────
-# Hardcoded to GRIT HPC path — this script is intended to run as a batch job there.
-OUTPUT_DIR = Path('/home/pielab-sandbox-jcoldiron/SIF-Analysis/data/raw/OpenET')
+# ── Output directory ──────────────────────────────────────────────────────────
+OUTPUT_DIR = Path('/home/pielab-sandbox-jcoldiron/SIF-Analysis/data/raw/NDVI')
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Log file ──────────────────────────────────────────────────────────────
+# ── Log file ──────────────────────────────────────────────────────────────────
 log_file = OUTPUT_DIR / f"download_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
 
@@ -95,20 +110,20 @@ except Exception as e:
     sys.exit(1)
 
 # =============================================================================
-# Reference grid: read CRS, transform, and region from uploaded asset
+# Reference grid: read CRS, transform, and dimensions from uploaded asset
 # =============================================================================
 log("Reading reference grid projection from GEE asset...")
 ref_image     = ee.Image(REF_ASSET_ID)
 ref_band_info = ref_image.getInfo()['bands'][0]
 TARGET_CRS       = ref_band_info['crs']
-TARGET_TRANSFORM = ref_band_info['crs_transform']  # [xScale, xShear, xOrig, yShear, yScale, yOrig]
-REF_WIDTH        = ref_band_info['dimensions'][0]   # 53
-REF_HEIGHT       = ref_band_info['dimensions'][1]   # 25
-log(f"  CRS:       {TARGET_CRS}")
-log(f"  Transform: {TARGET_TRANSFORM}")
+TARGET_TRANSFORM = ref_band_info['crs_transform']   # [xScale, xShear, xOrig, yShear, yScale, yOrig]
+REF_WIDTH        = ref_band_info['dimensions'][0]    # 53 pixels (Iowa lon extent at 0.125°)
+REF_HEIGHT       = ref_band_info['dimensions'][1]    # 25 pixels (Iowa lat extent at 0.125°)
+log(f"  CRS:        {TARGET_CRS}")
+log(f"  Transform:  {TARGET_TRANSFORM}")
 log(f"  Dimensions: {REF_WIDTH} x {REF_HEIGHT}")
 
-# Iowa geometry used only for collection filtering
+# Iowa geometry — used only for collection filtering (reduces data transferred)
 iowa = (ee.FeatureCollection('TIGER/2018/States')
           .filter(ee.Filter.eq('NAME', 'Iowa'))
           .geometry())
@@ -122,7 +137,7 @@ def get_monthly_periods(years):
     for year in years:
         for month in range(1, 13):
             start = datetime.date(year, month, 1)
-            # First day of next month as exclusive end date
+            # First day of next month as exclusive end date for filterDate()
             if month == 12:
                 end_excl = datetime.date(year + 1, 1, 1)
             else:
@@ -139,18 +154,19 @@ def get_monthly_periods(years):
 # Download loop
 # =============================================================================
 periods  = get_monthly_periods(YEARS)
-existing = {f.stem for f in OUTPUT_DIR.glob('OpenET_Iowa_*.tif')}
+existing = {f.stem for f in OUTPUT_DIR.glob('NDVI_Iowa_*.tif')}
 
-log(f"Output directory: {OUTPUT_DIR}")
-log(f"Total periods: {len(periods)}")
-log(f"Already downloaded: {len(existing)} — will skip these")
+log(f"Output directory:    {OUTPUT_DIR}")
+log(f"Total periods:       {len(periods)} (12 months x {len(YEARS)} years)")
+log(f"Already downloaded:  {len(existing)} — will skip these")
+log(f"Remaining to fetch:  {len(periods) - len(existing)}")
 log("")
 
-collection = ee.ImageCollection(OPENET_MONTHLY)
+collection = ee.ImageCollection(MODIS_MONTHLY)
 failed     = []
 
 for i, period in enumerate(periods):
-    filename = f"OpenET_Iowa_{period['label']}"
+    filename = f"NDVI_Iowa_{period['label']}"
     out_path = OUTPUT_DIR / f"{filename}.tif"
 
     if filename in existing:
@@ -158,19 +174,18 @@ for i, period in enumerate(periods):
         continue
 
     try:
-        # .mean() aggregates all tiles covering Iowa for this month.
-        # No .clip() here — the explicit grid dimensions cover the full Iowa
-        # bounding box; exact Iowa boundary clipping happens in post-processing.
+        # MOD13A3 is a monthly composite — one image per month.
+        # .mean() handles any overlap from edge of tile coverage.
+        # Apply scale factor to convert from integer storage to true NDVI (0–1).
         image = (collection
                  .filterDate(period['start'], period['end_excl'])
                  .filterBounds(iowa)
-                 .select(ET_BAND)
-                 .mean())
+                 .select(NDVI_BAND)
+                 .mean()
+                 .multiply(NDVI_SCALE))   # converts integer*10000 → float NDVI
 
-        # computePixels() is the reliable way to download at an exact affine
-        # grid when the native collection CRS differs from the target CRS.
-        # getDownloadURL + crsTransform silently falls back to native scale
-        # when reprojecting from UTM (EPSG:32610) to WGS84.
+        # computePixels() exports at an exact affine grid, matching the NLDAS
+        # reference used for OpenET and ET-delta data in this project.
         raw_bytes = ee.data.computePixels({
             'expression': image,
             'fileFormat': 'GEO_TIFF',
@@ -191,27 +206,26 @@ for i, period in enumerate(periods):
             },
         })
 
-        # ── Spatial coverage validation ────────────────────────────────────
-        # Check that at least 80% of columns have non-constant values.
-        # If a tile-only export sneaks through, col_std collapses to 0 for
-        # the edge-filled region — catch it before saving.
-        import io as _io
+        # ── Sanity check: verify NDVI values are in plausible range ───────────
+        # MODIS NDVI should be between -1 and 1 after scaling; outside this range
+        # suggests a scale-factor or fill-value issue.
         try:
+            import io as _io
             import numpy as _np
             import rasterio as _rio
             with _rio.open(_io.BytesIO(raw_bytes)) as _src:
                 _data = _src.read(1).astype(float)
-                _data[_data == _src.nodata] = _np.nan if _src.nodata is not None else _data[_data == _src.nodata]
-            _col_std  = _np.nanstd(_data, axis=0)
-            _n_cols   = _col_std.size
-            _n_vary   = int((_col_std > 0.01).sum())
-            _pct_vary = _n_vary / _n_cols if _n_cols else 0
-            if _pct_vary < 0.8:
-                raise ValueError(
-                    f"Spatial coverage check FAILED: only {_n_vary}/{_n_cols} "
-                    f"columns ({_pct_vary:.0%}) have spatially-varying values — "
-                    f"tile-only export suspected. Skipping save."
-                )
+                _nd   = _src.nodata
+                if _nd is not None:
+                    _data[_data == _nd] = _np.nan
+            _valid = _data[~_np.isnan(_data)]
+            if len(_valid) > 0:
+                _vmin, _vmax = float(_np.nanmin(_valid)), float(_np.nanmax(_valid))
+                if _vmin < -1.5 or _vmax > 1.5:
+                    log(f"  WARNING: NDVI range [{_vmin:.3f}, {_vmax:.3f}] — "
+                        f"check scale factor for {filename}")
+                else:
+                    log(f"  NDVI range: [{_vmin:.3f}, {_vmax:.3f}] ✓")
         except ImportError:
             pass  # rasterio not available; skip validation
 
@@ -223,14 +237,14 @@ for i, period in enumerate(periods):
     except Exception as e:
         log(f"[{i+1:3d}/{len(periods)}] FAILED: {filename} — {e}")
         failed.append(period['label'])
-        time.sleep(2)
+        time.sleep(2)   # brief pause before next attempt to avoid rate limits
 
 # =============================================================================
 # Summary
 # =============================================================================
 log("")
 log("=" * 60)
-log("DOWNLOAD COMPLETE")
+log("NDVI DOWNLOAD COMPLETE")
 log("=" * 60)
 log(f"Total periods:    {len(periods)}")
 log(f"Downloaded:       {len(periods) - len(existing) - len(failed)}")
