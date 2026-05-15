@@ -13,7 +13,7 @@ analysis (2015-2024).
 CURRENT STATUS:
 ---------------
 Years 2019-2024 are already on disk at:
-  data/raw/Cornbelt_annual_CDL/Cornbelt_annual_CDL_cropland_YYYY-01.tif
+  data/raw/cdl/CDL_Iowa_YYYY-01.tif
 
 Years 2015-2018 still need to be downloaded. This script submits GEE batch
 export tasks for 2015-2018 only. After running, check task status at:
@@ -29,7 +29,7 @@ CDL CROP CODES (key values used in analysis):
 OUTPUT:
 -------
 Google Drive → download manually to:
-  data/raw/Cornbelt_annual_CDL/Cornbelt_annual_CDL_cropland_YYYY-01.tif
+  data/raw/cdl/CDL_Iowa_YYYY-01.tif
 """
 
 import ee
@@ -48,14 +48,21 @@ roi = (ee.FeatureCollection("TIGER/2018/States")
 # Only submit tasks for years NOT already on disk.
 # 2019-2024 are already downloaded; submit 2015-2018 only.
 # Change YEARS_TO_DOWNLOAD if you need to re-download any year.
-YEARS_TO_DOWNLOAD = [2015, 2016, 2017, 2018]
+YEARS_TO_DOWNLOAD = list(range(2015, 2025))  # 2015–2024 full study period
 
 # ─── CDL collection settings ──────────────────────────────────────────────────
 COLLECTION   = 'USDA/NASS/CDL'
 VARIABLE     = 'cropland'  # annual crop type classification (0-254)
-EXPORT_NAME  = 'Cornbelt_annual_CDL'
-SCALE        = 500          # 500m resolution (native ~30m; aggregated to save file size)
+EXPORT_NAME  = 'CDL_Iowa'
+SCALE        = 30           # native 30m resolution — preserves exact integer crop codes
 CRS          = 'EPSG:4326'
+
+# NOTE: Using native 30m scale (not the previous 500m) to avoid bilinear resampling
+# artifacts on categorical crop codes. At 500m, GEE blends codes (e.g., 60% corn (code 1)
+# + 40% soy (code 5) = float value ~2.6), which causes load_crop_type_fractions() to
+# miss mixed pixels when checking `cdl_data == 1`. At 30m, each pixel retains its
+# exact integer code. After downloading, the analysis reprojects 30m → 0.125° NLDAS
+# grid using Resampling.average to get true fractional coverage per NLDAS cell.
 
 # ─── Load and filter the CDL ImageCollection ─────────────────────────────────
 dataset = (ee.ImageCollection(COLLECTION)
@@ -81,9 +88,9 @@ def export_cdl_for_date(date_str):
     img = (collection_with_date
                .filter(ee.Filter.eq('date', date_str))
                .select(VARIABLE)
-               .mean()               # mean of 1 image = itself
+               .first()          # single annual image — no averaging needed
                .clip(roi)
-               .toDouble())
+               .toInt16())       # keep as integer to preserve exact crop codes
 
     # Export to Google Drive
     task = ee.batch.Export.image.toDrive(
@@ -114,5 +121,8 @@ print("\nNext steps:")
 print("  1. Monitor export tasks at:")
 print("     https://console.cloud.google.com/earth-engine/tasks?project=ee-jacksoncoldiron")
 print("  2. Once complete, download from Google Drive to:")
-print("     data/raw/Cornbelt_annual_CDL/Cornbelt_annual_CDL_cropland_YYYY-01.tif")
-print("  3. Verify all 10 years (2015-2024) are present before running human_et.ipynb")
+print("     data/raw/cdl/CDL_Iowa_YYYY-01.tif")
+print("  3. Verify all 10 years (2015-2024) are present before running 01_human_et.ipynb")
+print()
+print("NOTE: Files are now named CDL_Iowa_YYYY-01.tif (was CDL_Iowa_YYYY-01.tif)")
+print("      Update cdl_dir path in analysis notebooks if existing 2019-2024 files are not re-downloaded.")
