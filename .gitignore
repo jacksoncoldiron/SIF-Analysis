@@ -78,3 +78,6 @@ outputs/plots/
 *.tmp
 *.temp
 *.log
+# SLURM job stderr/stdout — same category as *.log
+*.err
+*.out

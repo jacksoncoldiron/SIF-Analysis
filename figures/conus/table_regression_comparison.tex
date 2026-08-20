@@ -1,0 +1,21 @@
+\begin{table}[htbp]
+\centering
+\caption{Regression Results: SIF Response to Drought and Irrigation (CONUS Cropland, 2015--2024)}
+\label{tab:sif_regression}
+\begin{tabular}{lcccc}
+\hline
+ & \multicolumn{2}{c}{Model A: SIF z-score} & \multicolumn{2}{c}{Model B: SIF raw (mW\,m$^{-2}$\,sr$^{-1}$\,nm$^{-1}$)} \\
+ & $\hat{\beta}$ & SE & $\hat{\beta}$ & SE \\
+\hline
+SPEI-90d (drought) & 0.17264*** & (0.00209) & 0.02880*** & (0.00033) \\
+HumanET (deltaET) & 0.00357*** & (0.00006) & -0.00040*** & (0.00001) \\
+SPEI x deltaET (interaction) & 0.00067*** & (0.00006) & -0.00040*** & (0.00001) \\
+\hline
+$N$ & \multicolumn{2}{c}{434,245} & \multicolumn{2}{c}{434,245} \\
+$R^2$ & \multicolumn{2}{c}{0.2055} & \multicolumn{2}{c}{0.4719} \\
+Adj.\ $R^2$ & \multicolumn{2}{c}{0.2055} & \multicolumn{2}{c}{0.4719} \\
+\hline
+\multicolumn{5}{l}{\footnotesize Note: Pooled OLS with month fixed effects (not shown). HC3 robust standard errors.} \\
+\multicolumn{5}{l}{\footnotesize $^{***}$p$<$0.001; $^{**}$p$<$0.01; $^{*}$p$<$0.05.} \\
+\end{tabular}
+\end{table}
